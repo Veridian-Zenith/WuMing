@@ -256,9 +256,10 @@ scan_signature_date(signature_status *result)
     database_file_params *cvd_date = g_new0(database_file_params, 1);
     has_daily = parse_database_file (cvd_date, dirfd, "daily.cvd");
 
-    /*Try daily.cld*/
+    /*Try daily.cld only if daily.cvd wasn't found*/
     database_file_params *cld_date = g_new0(database_file_params, 1);
-    has_daily |= parse_database_file (cld_date, dirfd, "daily.cld");
+    if (!has_daily)
+        has_daily = parse_database_file (cld_date, dirfd, "daily.cld");
 
     /*If no daily database found, try main.cvd*/
     if (!has_daily && !parse_database_file (cvd_date, dirfd, "main.cvd"))
