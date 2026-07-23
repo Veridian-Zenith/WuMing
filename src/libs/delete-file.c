@@ -166,7 +166,15 @@ delete_threat_file_elevated(GHashTable *delete_file_table, DeleteFileData *data)
 
     pid_t pid = 0;
 
-    if (!spawn_new_process_no_pipes(&pid, PKEXEC_PATH, "pkexec", HELPER_PATH, // `HELPER_PATH` is defined in `meson.build`
+    g_autofree char *pkexec_path = find_program(PKEXEC_PATH, "pkexec");
+    if (!pkexec_path)
+    {
+        g_critical("[ERROR] pkexec not found");
+        file_security_context_clear(&copied_context, &shm_name, NULL);
+        return FILE_SECURITY_OPERATION_FAILED;
+    }
+
+    if (!spawn_new_process_no_pipes(&pid, pkexec_path, "pkexec", HELPER_PATH, // `HELPER_PATH` is defined in `meson.build`
                                     shm_name, data->path, NULL)) // Spawn the helper process
     {
         /* Process spawn failed */

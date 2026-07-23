@@ -129,8 +129,15 @@ static void
 start_update_async(UpdateContext *ctx)
 {
   /*Spawn update process*/
+  g_autofree char *freshclam_path = find_program(FRESHCLAM_PATH, "freshclam");
+  if (!freshclam_path)
+  {
+      g_warning("freshclam not found");
+      send_final_message((void *)ctx, gettext("Signature Update Failed"), FALSE, -1, update_complete_callback);
+      return;
+  }
   if (!spawn_new_process_no_pipes(&ctx->pid,
-      PKEXEC_PATH, "pkexec", FRESHCLAM_PATH, "--verbose", NULL))
+      PKEXEC_PATH, "pkexec", freshclam_path, "--verbose", NULL))
   {
       g_warning("Failed to spawn freshclam process");
       send_final_message((void *)ctx, gettext("Signature Update Failed"), FALSE, -1, update_complete_callback);
