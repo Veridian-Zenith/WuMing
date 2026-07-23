@@ -22,7 +22,7 @@
 
 
 /* the buffer size MUST be a power of 2 */
-#define RING_BUFFER_SIZE 8192
+#define RING_BUFFER_SIZE 65536
 
 typedef struct RingBuffer {
     char data[RING_BUFFER_SIZE];
