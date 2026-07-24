@@ -1,6 +1,7 @@
 /* wuming-application.c
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -89,7 +90,7 @@ wuming_application_about_action (GSimpleAction *action,
 	                       "translator-credits", _("translator-credits"),
 	                       "version", "1.0",
 	                       "developers", developers,
-	                       "copyright", "© 2025 EricLin",
+	                       "copyright", "© 2025 EricLin, © 2026 Dae Euhwa",
                            "license-type", GTK_LICENSE_GPL_3_0,
 						   "website", "https://github.com/EricLin0509/WuMing",
 						   "issue-url", "https://github.com/EricLin0509/WuMing/issues",
