@@ -1,6 +1,7 @@
 /* subproccess-components.h
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -82,3 +83,9 @@ spawn_new_process(int pipefd[2], pid_t *pid, const char *path, const char *comma
 // This function MUST end with a NULL argument to indicate the end of the arguments list
 gboolean
 spawn_new_process_no_pipes(pid_t *pid, const char *path, const char *command, ...);
+
+/* Find a program by its preferred path, falling back to PATH search.
+ * Returns the first accessible path found, or NULL if not found.
+ * The returned string must be freed by the caller. */
+char *
+find_program(const char *preferred_path, const char *program_name);

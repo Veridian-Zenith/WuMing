@@ -1,39 +1,83 @@
 # <img src="./data/icons/hicolor/scalable/apps/com.ericlin.wuming.svg" height="64"/> WuMing
 
-WuMing (aka. "无名") is a modern, lightweight GUI frontend for ClamAV, designed for Linux users who prioritize control and security.
+**A modern, lightweight GUI frontend for [ClamAV](https://www.clamav.net/)**
 
-## Overview
+WuMing (无名) is a GTK4/Libadwaita desktop application for scanning files and directories for malware using ClamAV. Built for Linux users who want full control over their system's security.
 
-WuMing leverages `clamdscan` to provide fast, efficient, daemon-based malware scanning. It features a clean, responsive user interface built with GTK4 and Libadwaita.
-
-### Design Philosophy: Safety First
-
-At the heart of WuMing is a commitment to user control and safety. **WuMing does NOT auto-quarantine files.** We believe that you should have full authority over your system's files. When threats are detected, WuMing presents you with a clear interface to review the findings and decide for yourself whether to delete or keep each file. This manual-control design empowers users and prevents accidental removal of important system files.
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ## Features
 
-- **Fast Scanning:** Utilizes `clamdscan` for rapid, daemon-based performance.
-- **Modern UI:** Built using Libadwaita for a seamless integration with modern Linux desktops.
-- **User-Centric Security:** Manual control over file handling—no automatic quarantining or deletion.
-- **Comprehensive Management:** Update ClamAV signatures, scan specific files/directories, and manage threats with ease.
+| Feature | Description |
+|---------|-------------|
+| **Fast Scanning** | Uses `clamdscan` (daemon-based) for rapid performance, falls back to `clamscan` when unavailable |
+| **Modern UI** | Built with GTK4 and Libadwaita — integrates with GNOME, Phosh, and other libadwaita-based desktops |
+| **Manual Control** | No auto-quarantining — you decide what to do with detected threats |
+| **Signature Management** | Update ClamAV virus definitions directly from the app |
+| **Security Overview** | Dashboard showing signature freshness, last scan time, and daemon status |
+| **Drag & Drop** | Drop files or folders onto the window to scan them instantly |
+| **Scan Options** | Customize scan behavior: archives, PUA detection, mail scanning, and more |
 
 ## Screenshots
 
-### Light mode
+<details>
+<summary><b>Light Mode</b></summary>
 
-![Security Overview light mode](imgs/overview-light.png)
+![Security Overview](imgs/overview-light.png)
+![Scan Page](imgs/scan-light.png)
+![Update Page](imgs/update-light.png)
 
-![Scan Page light mode](imgs/scan-light.png)
+</details>
 
-![Update Page light mode](imgs/update-light.png)
+<details>
+<summary><b>Dark Mode</b></summary>
 
-### Dark mode
+![Security Overview](imgs/overview-dark.png)
+![Scan Page](imgs/scan-dark.png)
+![Update Page](imgs/update-dark.png)
 
-![Security Overview dark mode](imgs/overview-dark.png)
+</details>
 
-![Scan Page dark mode](imgs/scan-dark.png)
+## Requirements
 
-![Update Page dark mode](imgs/update-light.png)
+- Linux with GTK 4 and Libadwaita
+- [ClamAV](https://www.clamav.net/) (`clamdscan` and/or `clamscan`)
+- Meson build system
+
+## Installation
+
+### Build from source
+
+```sh
+meson setup build --prefix=/usr
+sudo ninja -C build install
+```
+
+See [SETUP.md](SETUP.md) for recommended ClamAV configuration (running `clamd` as root for full filesystem access).
+
+### Flatpak
+
+*Coming soon.*
+
+## Usage
+
+Launch `wuming` from your application menu or terminal.
+
+- **Scan a file/folder:** Click the scan button, or drag & drop onto the window
+- **Update signatures:** Click the update button on the overview or update page
+- **Delete threats:** After a scan, review detected threats and choose to delete or keep each one
+- **Keyboard shortcuts:** Press `?` to view available shortcuts
+
+## How it works
+
+```
+┌─────────────┐     ┌──────────────┐     ┌────────────┐
+│  WuMing UI  │────▶│  clamdscan   │────▶│  clamd     │
+│  (GTK4)     │     │  (or clamscan)│    │  (daemon)  │
+└─────────────┘     └──────────────┘     └────────────┘
+```
+
+WuMing communicates with ClamAV through its command-line tools. When the ClamAV daemon (`clamd`) is running, it uses `clamdscan` for fast, daemon-based scanning. When the daemon is unavailable, it falls back to the slower `clamscan` directly.
 
 ## Roadmap
 
@@ -43,11 +87,15 @@ At the heart of WuMing is a commitment to user control and safety. **WuMing does
 - [x] Security overview page
 - [x] Settings page
 - [x] Scan options customization
+- [x] Drag & drop support
+- [x] Toast and desktop notifications
+- [ ] Scheduled scans
+- [ ] Scan history
 
-## Installation
+## Contributing
 
-### Manual Installation
+Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/EricLin0509/WuMing).
 
-```sh
-meson setup build --prefix=/usr && sudo ninja -C build install
-```
+## License
+
+WuMing is licensed under the [GNU General Public License v3.0](LICENSE).

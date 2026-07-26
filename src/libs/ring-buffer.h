@@ -1,6 +1,7 @@
 /* ring-buffer.h
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +23,7 @@
 
 
 /* the buffer size MUST be a power of 2 */
-#define RING_BUFFER_SIZE 8192
+#define RING_BUFFER_SIZE 65536
 
 typedef struct RingBuffer {
     char data[RING_BUFFER_SIZE];

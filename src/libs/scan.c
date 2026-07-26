@@ -1,6 +1,7 @@
 /* scan.c
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include "subprocess-components.h"
 #include "scan-options-configs.h"
@@ -72,13 +74,13 @@ typedef struct ScanContext {
 
 } ScanContext;
 
-static FILE *temp_file_fp;
+static FILE *scan_temp_file_fp;
 
 static int
 collect_file_path(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf)
 {
   if (tflag == FTW_F) {
-    fprintf(temp_file_fp, "%s\n", fpath);
+    fprintf(scan_temp_file_fp, "%s\n", fpath);
   }
   return 0;
 }
@@ -328,7 +330,7 @@ scan_sync_callback(gpointer user_data)
 
   if (exit_status == -1) return G_SOURCE_CONTINUE; // The process is still running
 
-  gboolean success = (exit_status == 0) || (exit_status == 1);
+  gboolean success = (exit_status == 0) || (exit_status == 1) || (exit_status == 2);
   set_completion_state(ctx, TRUE, success);
 
   const char *status_text = success ? gettext("Scan Complete") : gettext("Scan Failed");
@@ -341,13 +343,106 @@ scan_sync_callback(gpointer user_data)
   return G_SOURCE_REMOVE;
 }
 
+#define CLAMD_TMP_DIR "/etc/clamav/tmp"
+
+/* Ensure clamd's temp directory exists (required by clamd config).
+ * If missing, create it via pkexec so clamd can start successfully. */
+static void
+ensure_clamd_tmp_dir(void)
+{
+  struct stat st;
+  if (stat(CLAMD_TMP_DIR, &st) == 0 && S_ISDIR(st.st_mode))
+    return;
+
+  g_message("[INFO] %s missing, creating it...", CLAMD_TMP_DIR);
+
+  g_autofree char *pkexec_path = find_program("/usr/bin/pkexec", "pkexec");
+  if (!pkexec_path)
+  {
+    g_warning("pkexec not found, cannot create %s", CLAMD_TMP_DIR);
+    return;
+  }
+
+  pid_t pid = 0;
+  if (spawn_new_process_no_pipes(&pid, pkexec_path, "pkexec",
+          "/bin/mkdir", "-p", CLAMD_TMP_DIR, NULL))
+  {
+    wait_for_process(pid, 0);
+  }
+  else
+  {
+    g_warning("Failed to spawn mkdir for %s", CLAMD_TMP_DIR);
+  }
+}
+
+/* Data passed to the background scan thread */
+typedef struct {
+  ScanContext *ctx;
+  char *temp_file_path;
+} ScanThreadData;
+
+/* Background thread: collect file paths via nftw, then spawn clamdscan */
+static gpointer
+clamdscan_thread_func(gpointer user_data)
+{
+  ScanThreadData *data = user_data;
+  ScanContext *ctx = data->ctx;
+
+  /* Collect all file paths into the temp file */
+  scan_temp_file_fp = fopen(data->temp_file_path, "w");
+  if (scan_temp_file_fp) {
+      nftw(ctx->path, collect_file_path, 20, FTW_PHYS);
+      fclose(scan_temp_file_fp);
+      scan_temp_file_fp = NULL;
+  } else {
+      g_critical("Failed to open temporary file for writing");
+      send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
+      g_free(data->temp_file_path);
+      g_free(data);
+      return NULL;
+  }
+
+  /* Spawn clamdscan with the file list */
+  g_autofree char *clamdscan_path = find_program(CLAMDSCAN_PATH, "clamdscan");
+  if (!clamdscan_path)
+  {
+      g_critical("clamdscan not found");
+      send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
+      g_free(data->temp_file_path);
+      g_free(data);
+      return NULL;
+  }
+  if (!spawn_new_process(ctx->pipefd, &ctx->pid,
+      clamdscan_path, "clamdscan", "--fdpass", "-m", "-f", data->temp_file_path, NULL))
+  {
+      g_critical("Failed to spawn clamdscan process");
+      send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
+      g_free(data->temp_file_path);
+      g_free(data);
+      return NULL;
+  }
+
+  ring_buffer_init(&ctx->ring_buffer);
+
+  /* Set up repeating async I/O monitoring on the main context.
+   * Use a GSource timer — safe to create and attach from any thread. */
+  GSource *source = g_timeout_source_new(BASE_TIMEOUT_MS);
+  g_source_set_callback(source, (GSourceFunc) scan_sync_callback, ctx, NULL);
+  g_source_attach(source, g_main_context_default());
+
+  g_free(data);
+  return NULL;
+}
+
 static void
 start_scan_async(ScanContext *ctx)
 {
+    /* Ensure clamd's temp directory exists before attempting daemon-based scan */
+    ensure_clamd_tmp_dir();
+
     if (is_service_enabled("clamav-daemon.service") == 1)
     {
-        /* Use clamdscan */
-        /* Create temporary file for file list */
+        /* Use clamdscan — collect files in background thread to avoid blocking UI */
         char *temp_template = g_strdup("/tmp/wuming_scan_XXXXXX");
         int fd = mkstemp(temp_template);
         if (fd == -1) {
@@ -356,47 +451,41 @@ start_scan_async(ScanContext *ctx)
             g_free(temp_template);
             return;
         }
+        close(fd); /* Thread will open the file itself */
         ctx->temp_file_path = temp_template;
-        temp_file_fp = fdopen(fd, "w");
-        if (temp_file_fp) {
-            nftw(ctx->path, collect_file_path, 20, FTW_PHYS);
-            fclose(temp_file_fp);
-        } else {
-            g_critical("Failed to open temporary file for writing");
-            close(fd);
-            send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
-            return;
-        }
 
-        /* Spawn scan process */
-        if (!spawn_new_process(ctx->pipefd, &ctx->pid,
-            CLAMDSCAN_PATH, "clamdscan", "-f", ctx->temp_file_path, NULL))
-        {
-              g_critical("Failed to spawn clamdscan process");
-              send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
-              return;
-        }
+        ScanThreadData *data = g_new0(ScanThreadData, 1);
+        data->ctx = ctx;
+        data->temp_file_path = g_strdup(temp_template);
+
+        g_thread_new("clamdscan-collector", clamdscan_thread_func, data);
     }
     else
     {
         /* Use clamscan fallback */
         wuming_window_send_toast_notification(ctx->window, gettext("ClamAV daemon is not running. Using clamscan fallback (slower)."), 10);
-        
+
+        g_autofree char *clamscan_path = find_program(CLAMSCAN_PATH_FALLBACK, "clamscan");
+        if (!clamscan_path)
+        {
+              g_critical("clamscan not found");
+              send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
+              return;
+        }
         if (!spawn_new_process(ctx->pipefd, &ctx->pid,
-            CLAMSCAN_PATH_FALLBACK, "clamscan", ctx->path, NULL))
+            clamscan_path, "clamscan", ctx->path, NULL))
         {
               g_critical("Failed to spawn clamscan process");
               send_final_message((void *)ctx, gettext("Scan Failed"), FALSE, -1, scan_complete_callback);
               return;
         }
+
+        ring_buffer_init(&ctx->ring_buffer);
+
+        GSource *source = g_timeout_source_new(BASE_TIMEOUT_MS);
+        g_source_set_callback(source, (GSourceFunc) scan_sync_callback, ctx, NULL);
+        g_source_attach(source, g_main_context_default());
     }
-
-    ring_buffer_init(&ctx->ring_buffer);
-
-    /* Use Async I/O to check the progress of the scan */
-    GSource *source = g_timeout_source_new(BASE_TIMEOUT_MS);
-    g_source_set_callback(source, (GSourceFunc) scan_sync_callback, ctx, NULL);
-    g_source_attach(source, g_main_context_default());
 }
 
 static void
@@ -437,6 +526,10 @@ scan_context_clear(ScanContext **ctx)
 
   if ((*ctx)->path) scan_context_clear_path(*ctx); // Clear the path if have one
   if ((*ctx)->temp_file_path) {
+      if (scan_temp_file_fp) {
+          fclose(scan_temp_file_fp);
+          scan_temp_file_fp = NULL;
+      }
       unlink((*ctx)->temp_file_path);
       g_free((*ctx)->temp_file_path);
   }

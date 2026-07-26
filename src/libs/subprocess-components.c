@@ -1,6 +1,7 @@
 /* subprocess-components.c
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -192,6 +193,18 @@ send_final_message(gpointer context, const char *message, gboolean is_success, i
                    (GSourceFunc) callback_function,
                    complete_data,
                    (GDestroyNotify)idle_data_clear);
+}
+
+/* Find a program by its preferred path, falling back to PATH search.
+ * Returns the first accessible path found, or NULL if not found.
+ * The returned string must be freed by the caller. */
+char *
+find_program(const char *preferred_path, const char *program_name)
+{
+    if (preferred_path && access(preferred_path, X_OK) == 0)
+        return g_strdup(preferred_path);
+
+    return g_find_program_in_path(program_name);
 }
 
 /* Build the command arguments */

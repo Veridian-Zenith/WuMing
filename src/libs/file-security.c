@@ -1,6 +1,7 @@
 /* file-security.c
  *
  * Copyright 2025 EricLin
+ * Copyright 2026 Dae Euhwa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,8 +37,8 @@
 #define O_PATH 010000000
 #endif
 
-#define SHARED_MEM_FALLBACK_RANDOM_NUM 4519921969881885362 // Fallback random number for shared memory if getrandom() is failed
-#define SHARED_MEM_FILE_PATH_LEN 44 // 23 ("/file_security_context") + (20 random number) + (null terminator)
+#define SHARED_MEM_FALLBACK_RANDOM_NUM 4519921969881885362ULL // Fallback random number for shared memory if getrandom() is failed
+#define SHARED_MEM_FILE_PATH_LEN 64 // "/file_security_context_" + pid(10) + "_" + random(16 hex) + null
 
 // Use `O_NOFOLLOW` to avoid following symlinks
 #define DIRECTORY_OPEN_FLAGS (O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -142,16 +143,19 @@ static FileSecurityContext *file_security_context_create_shared_memory(char **sh
 
     FileSecurityContext *context = NULL;
 
-    /* Create a new random number */
+    /* Create a new random number — include PID to make the name unpredictable
+     * even if getrandom() output is weak, preventing an attacker from
+     * pre-creating shared memory to intercept the security context. */
     uint64_t secure_rand;
-    if (getrandom(&secure_rand, sizeof(secure_rand), 0) != sizeof(secure_rand)) // Create a random number for the shared memory name
+    if (getrandom(&secure_rand, sizeof(secure_rand), 0) != sizeof(secure_rand))
     {
         fprintf(stderr, "[WARNING] getrandom() failed, using fallback random number\n");
         secure_rand = SHARED_MEM_FALLBACK_RANDOM_NUM;
     }
 
     *shared_mem_filepath = calloc(SHARED_MEM_FILE_PATH_LEN, sizeof(char));
-    snprintf(*shared_mem_filepath, SHARED_MEM_FILE_PATH_LEN, "/file_security_context_%" PRIu64, secure_rand);
+    snprintf(*shared_mem_filepath, SHARED_MEM_FILE_PATH_LEN,
+             "/file_security_context_%d_%" PRIx64, getpid(), secure_rand);
 
     /* Create the shared memory */
     int shm_fd = shm_open(*shared_mem_filepath, O_CREAT | O_EXCL | O_RDWR, 0600);
@@ -489,7 +493,7 @@ FileSecurityStatus file_security_secure_delete(FileSecurityContext *orig_context
     int dir_fd = -1; // Store the file descriptor for `unlinkat`
     FileSecurityContext *new_context = file_security_context_new(path, false, NULL, &dir_fd);
 
-    if (new_context == NULL) return FILE_SECURITY_INVALID_PATH; // Failed to take a new snapshot of the directory and file status
+    if (new_context == NULL) return FILE_SECURITY_INVALID_PATH; // Failed to take a new snapshot of the file or directory status
 
     /* Check if the directory and file status has changed */
     status =  file_security_validate(orig_context, new_context, NULL, flags);
@@ -499,13 +503,27 @@ FileSecurityStatus file_security_secure_delete(FileSecurityContext *orig_context
         is_valid = false;
     }
 
-    if (is_valid && unlinkat(dir_fd, path, 0) == -1)
+    /* Extract basename for unlinkat — dir_fd already references the parent directory,
+     * so we must NOT pass the full path (that would resolve relative to dir_fd incorrectly).
+     * Using the fd-based unlinkat on an already-validated file avoids TOCTOU races. */
+    char *file_name = NULL;
+    char *dir_name = NULL;
+    if (is_valid && !get_file_dir_name(path, &file_name, &dir_name))
+    {
+        fprintf(stderr, "[SECURITY] Failed to extract basename from path: %s\n", path);
+        status = FILE_SECURITY_INVALID_PATH;
+        is_valid = false;
+    }
+
+    if (is_valid && unlinkat(dir_fd, file_name, 0) == -1)
     {
         fprintf(stderr, "[SECURITY] Failed to delete the file: %s\n", path);
         status = FILE_SECURITY_OPERATION_FAILED;
         is_valid = false;
     }
 
+    free(file_name);
+    free(dir_name);
     file_security_context_clear(&new_context, NULL, &dir_fd); // Free the new context and the file descriptor
     return status;
 }
