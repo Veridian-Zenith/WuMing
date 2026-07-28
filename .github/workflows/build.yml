@@ -9,15 +9,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: fedora:latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y meson ninja-build gcc pkg-config \
-            libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
-            libdbus-1-dev gettext itstool desktop-file-utils
+          dnf install -y meson ninja-build gcc pkgconf-pkg-config \
+            gtk4-devel libadwaita-devel glib2-devel dbus-devel \
+            gettext itstool desktop-file-utils appstream-glib
 
       - name: Configure meson
         run: meson setup build --wipe
@@ -26,4 +27,4 @@ jobs:
         run: ninja -C build
 
       - name: Install to verify
-        run: sudo ninja -C build install DESTDIR=${{ github.workspace }}/install
+        run: ninja -C build install DESTDIR=${GITHUB_WORKSPACE}/install
