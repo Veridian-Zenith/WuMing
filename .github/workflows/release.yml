@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y meson ninja-build gcc pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
-            libdbus-1-dev gettext itstool
+            libdbus-1-dev gettext itstool desktop-file-utils
 
       - name: Configure meson
         run: meson setup build --wipe
