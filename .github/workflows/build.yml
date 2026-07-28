@@ -1,0 +1,29 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build gcc pkg-config \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev libgio-2.0-dev \
+            libdbus-1-dev gettext itstool appstream-glib gnome-icon-theme
+
+      - name: Configure meson
+        run: meson setup build --wipe
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Install to verify
+        run: sudo ninja -C build install DESTDIR=${{ github.workspace }}/install
