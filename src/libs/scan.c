@@ -391,6 +391,7 @@ clamdscan_thread_func(gpointer user_data)
   /* Collect all file paths into the temp file */
   scan_temp_file_fp = fopen(data->temp_file_path, "w");
   if (scan_temp_file_fp) {
+      fchmod(fileno(scan_temp_file_fp), 0600);
       nftw(ctx->path, collect_file_path, 20, FTW_PHYS);
       fclose(scan_temp_file_fp);
       scan_temp_file_fp = NULL;
